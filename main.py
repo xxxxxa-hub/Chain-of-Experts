@@ -64,7 +64,7 @@ def chain_of_experts(problem,
             f.write(code)
 
         if enable_reflection:
-            test_sample = evaluator.forward(problem)
+            test_sample = {"input": {}}
             print(f'Generate test sample:\n{test_sample}')
             test_samples = [test_sample]
             feedback = evaluator.evaluate(test_samples)
@@ -75,7 +75,7 @@ def chain_of_experts(problem,
                     previous_expert = expert_stack.pop()
                     previous_comment = comment_pool.pop_comment()
                     result = previous_expert.backward(feedback_pool)
-                    result = json.loads(result)
+
                     if result['is_caused_by_you']:
                         previous_comment.comment_text = result['refined_result']
                         expert_stack.append(previous_expert)
