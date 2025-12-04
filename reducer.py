@@ -1,6 +1,5 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import OpenAI
-from langchain_classic.chains import LLMChain
 from langchain_openai import ChatOpenAI
 
 from experts.base_expert import BaseExpert
@@ -28,9 +27,9 @@ Your final code is as following:
 
     def forward(self, problem_description, workspace):
         comment_text = workspace.get_current_comment_text()
-        answer = self.forward_chain.predict(
-            problem_description=problem_description, 
-            comment_text=comment_text
-        )
-        return answer
+        result = self.forward_chain.invoke({
+            'problem_description': problem_description,
+            'comment_text': comment_text
+        })
+        return result.content
 

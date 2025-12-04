@@ -4,6 +4,21 @@ import traceback
 import inspect
 
 from experts.base_expert import BaseExpert
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain_core.runnables import RunnableSequence
+from pydantic import BaseModel, Field
+from typing import Dict, Any
+
+class EvaluatorForwardResponse(BaseModel):
+    """JSON schema for evaluator forward output"""
+    input: Dict[str, Any] = Field(
+        description="Input parameters for testing the function",
+        json_schema_extra={
+            # This is the required fix for the OpenAI API
+            "additionalProperties": False 
+        }
+    )
 
 
 class Evaluator(BaseExpert):
@@ -11,22 +26,18 @@ class Evaluator(BaseExpert):
     ROLE_DESCRIPTION = '''You are an evaluator.'''
     FORWARD_TASK = '''You will be responsible for generating test samples for verifying the correctness of a program.
 
-You will be given an operations research optimization problem and its function signature, and you are responsible for generating an input example for testing the function.
+You will be given an operations research optimization problem and its function signature, and you are responsible for generating test inputs for the function.
+IMPORTANT: The generated function should take NO arguments. Generate test inputs as an empty input dictionary.
 The test data you generate must be reasonable, solvable, and realistic.
 Output JSON directly without any other information!
 
 Input:
 problem: A candy store mixes regular candy and sour candy to prepare two products, regular mix and sour surprise mix. Each kilogram of the regular mix contains 0.8 kg of regular candy and 0.2 kg of sour candy. The profit per kilogram of the regular mix is $3. Each kilogram of the sour surprise mix contains 0.1 kg of regular candy and 0.9 kg of sour candy. The profit per kilogram of the sour surprise mix is $5. The candy store has 80 kg of regular candy and 60 kg of sour candy available. How many kilograms of each type of candy mix should be created to maximize profits?
 code:
-def prob_29(regular_mix, sour_surprise_mix, constraint1, constraint2):
+def prob_29():
     """
-    Args:
-        regular_mix: a float, the amount of regular mix candy created
-        sour_surprise_mix: a float, the amount of sour surprise mix candy created
-        constraint1: an integer, the limit of available regular candy
-        constraint2: an integer, the limit of available sour candy
     Returns:
-        obj: a float, the maximum profit achieved
+        obj: a float, the maximum profit achieved (ONLY the objective value, not decision variables)
     """
     obj = 1e9
     # To be implemented
@@ -34,12 +45,7 @@ def prob_29(regular_mix, sour_surprise_mix, constraint1, constraint2):
 
 Output:
 {{
-    "input": {{
-        "regular_mix": 94.2,
-        "sour_surprise_mix": 45.7,
-        "constraint1": 80,
-        "constraint2": 60
-    }}
+    "input": {{}}
 }}
 
 Input:
@@ -56,15 +62,23 @@ Output:
             description='An special expert that generates the test data and test correctness.',
             model=model
         )
+        # Create a separate LLM instance with structured output for forward chain
+        forward_llm = ChatOpenAI(
+            model_name=model,
+            temperature=1.0
+        )
+        structured_forward_llm = forward_llm.with_structured_output(EvaluatorForwardResponse, method="json_mode")
+        prompt = PromptTemplate.from_template(self.ROLE_DESCRIPTION + '\n' + self.FORWARD_TASK)
+        self.forward_chain = prompt | structured_forward_llm
 
     def forward(self, problem):
-        answer = self.forward_chain.predict(
-            problem_description=problem['description'], 
-            code_example=problem['code_example'],
+        output = self.forward_chain.invoke(
+            {
+                "problem_description": problem['description'],
+                "code_example": problem['code_example'],
+            }
         )
-        answer = answer.strip("'").strip('')
-        answer = json.loads(answer)
-        return answer
+        return output.model_dump()
     
     def evaluate(self, samples):
         feedback = ''

@@ -2,7 +2,6 @@ import random
 
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import OpenAI
-from langchain_classic.chains import LLMChain
 from langchain_openai import ChatOpenAI
 
 from experts.base_expert import BaseExpert
@@ -43,17 +42,18 @@ You should output the name of expert directly. The next expert is:'''
         commented_experts_name = [c.expert.name for c in comment_pool.comments]
 
         experts_info = '\n'.join([str(e) for e in all_experts])
-        commented_experts = str(commented_experts_name)     
+        commented_experts = str(commented_experts_name)
         remaining_experts = str(list(set(all_experts_name) - set(commented_experts_name)))
-        answer = self.forward_chain.predict(
-            problem_description=problem['description'], 
-            experts_info=experts_info,
-            commented_experts=commented_experts,
-            remaining_experts=remaining_experts,
-            max_collaborate_nums=max_collaborate_nums,
-            remaining_collaborate_nums=max_collaborate_nums-len(commented_experts_name),
-        )
-        expert_name_to_obj = { e.name: e for e in all_experts }
+        result = self.forward_chain.invoke({
+            'problem_description': problem['description'],
+            'experts_info': experts_info,
+            'commented_experts': commented_experts,
+            'remaining_experts': remaining_experts,
+            'max_collaborate_nums': max_collaborate_nums,
+            'remaining_collaborate_nums': max_collaborate_nums - len(commented_experts_name),
+        })
+        answer = result.content
+        expert_name_to_obj = {e.name: e for e in all_experts}
         for name, expert in expert_name_to_obj.items():
             if name in answer:
                 return expert

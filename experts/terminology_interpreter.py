@@ -1,27 +1,40 @@
-import json
 from experts.base_expert import BaseExpert
 
-from langchain import PromptTemplate, OpenAI, LLMChain
-from langchain.chat_models import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import OpenAI
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+
+
+class TerminologyItem(BaseModel):
+    """JSON schema for a single terminology interpretation item"""
+    terminology: str = Field(description="The terminology term")
+    interpretation: str = Field(description="The interpretation of the terminology")
+
+
+class TerminologyInterpreterForwardResponse(BaseModel):
+    """JSON schema for terminology interpreter forward output"""
+    items: list[TerminologyItem] = Field(description="List of terminology interpretations")
+
+
+class TerminologyInterpreterBackwardResponse(BaseModel):
+    """JSON schema for terminology interpreter backward output"""
+    is_caused_by_you: bool = Field(description="Whether the issue is caused by this expert")
+    reason: str = Field(description="Explanation of the issue. Empty string if not caused by you")
+    refined_result: str = Field(description="Refined terminology interpretation if the issue is caused by you")
 
 
 class TerminologyInterpreter(BaseExpert):
 
     ROLE_DESCRIPTION = 'You are a terminology interpreter who provides additional domain-specific knowledge to enhance problem understanding and formulation.'
-    FORWARD_TASK = '''As a domain knowledge terminology interpreter, your role is to provide additional information and insights related to the problem domain. 
-Here are some relevant background knowledge about this problem: {knowledge}. 
+    FORWARD_TASK = '''As a domain knowledge terminology interpreter, your role is to provide additional information and insights related to the problem domain.
+Here are some relevant background knowledge about this problem: {knowledge}.
 
-You can contribute by sharing your expertise, explaining relevant concepts, and offering suggestions to improve the problem understanding and formulation. 
-Please provide your input based on the given problem description: 
+You can contribute by sharing your expertise, explaining relevant concepts, and offering suggestions to improve the problem understanding and formulation.
+Please provide your input based on the given problem description:
 {problem_description}
 
-Your output format should be a JSON like this (choose at most 3 hardest terminology):
-[
-  {{
-    "terminology": "...",
-    "interpretation": "..."
-  }}
-]
+Choose at most 3 of the hardest terminology terms and provide interpretations for them.
 '''
 
     BACKWARD_TASK = '''When you are solving a problem, you get a feedback from the external environment. You need to judge whether this is a problem caused by you or by other experts (other experts have given some results before you). If it is your problem, you need to give Come up with solutions and refined code.
@@ -34,66 +47,66 @@ The feedback is as follow:
 
 The answer you give previously is as follow:
 {previous_answer}
-
-The output format is a JSON structure followed by refined code:
-{{
-    'is_caused_by_you': false,
-    'reason': 'leave empty string if the problem is not caused by you',
-    'refined_result': 'Your refined result'
-}}
 '''
 
     def __init__(self, model):
         super().__init__(
             name='Terminology Interpreter',
             description='Provides additional domain-specific knowledge to enhance problem understanding and formulation.',
-            model=model   
-        )
-        self.llm = ChatOpenAI(
-            model_name=model,
-            temperature=0
+            model=model
         )
         self.forward_prompt_template = self.ROLE_DESCRIPTION + '\n' + self.FORWARD_TASK
-        self.forward_chain = LLMChain(
-            llm=self.llm,
-            prompt=PromptTemplate.from_template(self.forward_prompt_template)
+        # Create a separate LLM instance with structured output for forward chain
+        forward_llm = ChatOpenAI(
+            model_name=model,
+            temperature=1.0
         )
+        structured_forward_llm = forward_llm.with_structured_output(TerminologyInterpreterForwardResponse)
+        forward_prompt = PromptTemplate.from_template(self.forward_prompt_template)
+        self.forward_chain = forward_prompt | structured_forward_llm
+
         self.backward_prompt_template = self.ROLE_DESCRIPTION + '\n' + self.BACKWARD_TASK
-        self.backward_chain = LLMChain(
-            llm=self.llm,
-            prompt=PromptTemplate.from_template(self.backward_prompt_template)
+        # Create a separate LLM instance with structured output for backward chain
+        backward_llm = ChatOpenAI(
+            model_name=model,
+            temperature=1.0
         )
+        structured_backward_llm = backward_llm.with_structured_output(TerminologyInterpreterBackwardResponse)
+        backward_prompt = PromptTemplate.from_template(self.backward_prompt_template)
+        self.backward_chain = backward_prompt | structured_backward_llm
 
     def forward(self, problem, comment_pool):
         self.problem = problem
         comments_text = comment_pool.get_current_comment_text()
         print('Input')
         print(self.FORWARD_TASK.format(
-            problem_description=problem['description'], 
+            problem_description=problem['description'],
             knowledge='None',
             comments_text=comments_text
         ))
         print()
-        output = self.forward_chain.predict(
-            problem_description=problem['description'], 
-            knowledge='None',
-            comments_text=comments_text
-        )
-        output = json.loads(output)
+        result = self.forward_chain.invoke({
+            'problem_description': problem['description'],
+            'knowledge': 'None',
+            'comments_text': comments_text
+        })
         answer = ''
-        for item in output:
-            answer += item['terminology'] + ':' + item['interpretation'] + '\n'
+        for item in result.items:
+            answer += item.terminology + ':' + item.interpretation + '\n'
         self.previous_answer = answer
         return answer
 
     def backward(self, feedback_pool):
         if not hasattr(self, 'problem'):
             raise NotImplementedError('Please call forward first!')
-        output = self.backward_chain.predict(
-            problem_description=self.problem['description'], 
-            previous_answer=self.previous_answer,
-            feedback=feedback_pool.get_current_comment_text())
-        return output
+        output = self.backward_chain.invoke(
+            {
+                "problem_description": self.problem['description'],
+                "previous_answer": self.previous_answer,
+                "feedback": feedback_pool.get_current_comment_text()
+            }
+        )
+        return output.model_dump()
 
 
 if __name__ == '__main__':

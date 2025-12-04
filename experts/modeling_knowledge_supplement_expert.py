@@ -1,7 +1,16 @@
 from experts.base_expert import BaseExpert
 
-from langchain import PromptTemplate, OpenAI, LLMChain
-from langchain.chat_models import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import OpenAI
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+
+
+class ModelingKnowledgeSupplementBackwardResponse(BaseModel):
+    """JSON schema for modeling knowledge supplement expert backward output"""
+    is_caused_by_you: bool = Field(description="Whether the issue is caused by this expert")
+    reason: str = Field(description="Explanation of the issue. Empty string if not caused by you")
+    refined_result: str = Field(description="Refined code if the issue is caused by you")
 
 
 class ModelingKnowledgeSupplementExpert(BaseExpert):
@@ -16,7 +25,10 @@ Here is a starter code:
 And the comments from other experts are as follow:
 {comments_text}
 
-Give your Python code directly.'''
+IMPORTANT: The function must take NO arguments. All data should be hardcoded inside the function body.
+IMPORTANT: The function should return ONLY the objective value, not the decision variables.
+
+Give your Python code directly. You should follow the format of given code example strictly. No code is required outside the function except for the import package (No test code). In your code, the model must be a solvable LP or MIP model.'''
     BACKWARD_TASK = '''When you are solving a problem, you get a feedback from the external environment. You need to judge whether this is a problem caused by you or by other experts (other experts have given some results before you). If it is your problem, you need to give Come up with solutions and refined code.
 
 The original problem is as follow:
@@ -24,38 +36,31 @@ The original problem is as follow:
 
 The code you give previously is as follow:
 {previous_code}
-    
+
 The feedback is as follow:
 {feedback}
 
-The output format is a JSON structure followed by refined code:
-{{
-    'is_caused_by_you': false,
-    'reason': 'leave empty string if the problem is not caused by you',
-    'refined_result': 'Your refined code...'
-}}
+IMPORTANT: The function must take NO arguments. All data should be hardcoded inside the function body.
+IMPORTANT: The function should return ONLY the objective value, not the decision variables.
 '''
 
     def __init__(self, model):
         super().__init__(
             name='Modeling Knowledge Supplement Expert',
             description='Skilled in programming and coding, capable of implementing the optimization solution in a programming language.',
-            model=model   
-        )
-        self.llm = ChatOpenAI(
-            model_name=model,
-            temperature=0
+            model=model
         )
         self.forward_prompt_template = self.ROLE_DESCRIPTION + '\n' + self.FORWARD_TASK
-        self.forward_chain = LLMChain(
-            llm=self.llm,
-            prompt=PromptTemplate.from_template(self.forward_prompt_template)
-        )
+        self.forward_chain = PromptTemplate.from_template(self.forward_prompt_template) | self.llm
         self.backward_prompt_template = self.ROLE_DESCRIPTION + '\n' + self.BACKWARD_TASK
-        self.backward_chain = LLMChain(
-            llm=self.llm,
-            prompt=PromptTemplate.from_template(self.backward_prompt_template)
+        # Create a separate LLM instance with structured output for backward chain
+        backward_llm = ChatOpenAI(
+            model_name=model,
+            temperature=1.0
         )
+        structured_backward_llm = backward_llm.with_structured_output(ModelingKnowledgeSupplementBackwardResponse)
+        prompt = PromptTemplate.from_template(self.backward_prompt_template)
+        self.backward_chain = prompt | structured_backward_llm
 
     def forward(self, problem, comment_pool):
         self.problem = problem
@@ -63,14 +68,15 @@ The output format is a JSON structure followed by refined code:
         print('-' * 30)
         print('Input of programming expert:')
         print(self.forward_prompt_template.format(
-            problem_description=problem['description'], 
+            problem_description=problem['description'],
             code_example=problem['code_example'],
             comments_text=comments_text))
-        output = self.forward_chain.predict(
-            problem_description=problem['description'], 
-            code_example=problem['code_example'],
-            comments_text=comments_text
-        )
+        result = self.forward_chain.invoke({
+            'problem_description': problem['description'],
+            'code_example': problem['code_example'],
+            'comments_text': comments_text
+        })
+        output = result.content
         print()
         print('Output of programming expert:')
         print(output)
@@ -81,8 +87,11 @@ The output format is a JSON structure followed by refined code:
     def backward(self, feedback_pool):
         if not hasattr(self, 'problem'):
             raise NotImplementedError('Please call forward first!')
-        output = self.backward_chain.predict(
-            problem_description=self.problem['description'], 
-            previous_code=self.previous_code,
-            feedback=feedback_pool.get_current_comment_text())
-        return output
+        output = self.backward_chain.invoke(
+            {
+                "problem_description": self.problem['description'],
+                "previous_code": self.previous_code,
+                "feedback": feedback_pool.get_current_comment_text()
+            }
+        )
+        return output.model_dump()
