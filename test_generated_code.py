@@ -50,7 +50,7 @@ def test_generated_code(problem, ground_truth, log_file=None, generated_code_pat
         output = func()
     except BaseException as e:
         is_re = True
-        log_file.write('=' * 15 + f'test sample {i}' + '=' * 15 + '\n')
+        log_file.write('=' * 15 + f'test sample' + '=' * 15 + '\n')
         log_file.write('Runtime Error\n')
         log_file.write(str(e) + '\n\n')
     if post_process is not None:
