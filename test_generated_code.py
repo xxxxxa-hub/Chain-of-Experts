@@ -1,6 +1,8 @@
 import os
 import json
 import importlib
+import importlib.util
+import sys
 from result import Result
 
 
@@ -8,12 +10,20 @@ class NullWriter:
     def write(self, s):
         pass
 
-def test_generated_code(problem, ground_truth, log_file=None):
+def test_generated_code(problem, ground_truth, log_file=None, generated_code_path=None):
     log_file = log_file or NullWriter()
 
     try:
-        import generated_code
-        importlib.reload(generated_code)
+        if generated_code_path:
+            # Import from a specific file path (for multiprocessing safety)
+            spec = importlib.util.spec_from_file_location("generated_code", generated_code_path)
+            generated_code = importlib.util.module_from_spec(spec)
+            sys.modules["generated_code"] = generated_code
+            spec.loader.exec_module(generated_code)
+        else:
+            # Fallback to the old method for backwards compatibility
+            import generated_code
+            importlib.reload(generated_code)
     except BaseException as e:
         log_file.write('There is grammar error in generated code!\n')
         log_file.write(str(e) + '\n')

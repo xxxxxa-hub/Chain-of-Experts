@@ -4,6 +4,7 @@ import os
 import re
 from tqdm import tqdm
 from pathlib import Path
+from multiprocessing import Pool, Manager
 # from langchain.callbacks import get_openai_callback
 from langchain_community.callbacks import get_openai_callback
 from test_generated_code import test_generated_code, get_ground_truth
@@ -25,6 +26,78 @@ algorithms = {
     # 'ssp': ssp,
     # 'reflexion': reflexion,
 }
+
+
+def process_problem(args_dict):
+    """Worker function to process a single problem.
+
+    Args:
+        args_dict: Dictionary containing problem data and arguments
+
+    Returns:
+        Dictionary with results (passed, error_type)
+    """
+    problem = args_dict['problem']
+    dataset = args_dict['dataset']
+    algorithm = args_dict['algorithm']
+    path = args_dict['path']
+    model = args_dict['model']
+    max_collaborate_nums = args_dict['max_collaborate_nums']
+    enable_reflection = args_dict['enable_reflection']
+    max_trials = args_dict['max_trials']
+
+    try:
+        print(problem)
+        problem_data = read_problem(dataset, problem)
+
+        with get_openai_callback() as cb:
+            if algorithm == 'chain_of_experts' or algorithm == 'coe':
+                answer = chain_of_experts(
+                    problem_data,
+                    max_collaborate_nums,
+                    model_name=model,
+                    enable_reflection=enable_reflection,
+                    max_trials=max_trials)
+                time.sleep(10)
+            else:
+                algo_module = algorithms[algorithm]
+                answer = algo_module.solve(problem_data, model_name=model)
+            print('-' * 10 + 'Token usage' + '-' * 20)
+            print(cb)
+            print('-' * 25)
+
+        # Write results to problem-specific files (thread-safe)
+        with open(os.path.join(path, f'{problem}_original_answer.txt'), 'w', encoding='utf8') as f:
+            f.write(answer)
+
+        code = extract_code_from_string(answer)
+
+        # Write code to problem-specific directory in log folder
+        problem_code_dir = os.path.join(path, 'codes', problem)
+        Path(problem_code_dir).mkdir(parents=True, exist_ok=True)
+        code_file_path = os.path.join(problem_code_dir, 'generated_code.py')
+        with open(code_file_path, 'w', encoding='utf8') as f:
+            f.write(code)
+
+        # Test the generated code with the specific code file
+        ground_truth = get_ground_truth(dataset, problem)
+        with open(os.path.join(path, f'{problem}_test_log.txt'), 'w', encoding='utf8') as f:
+            result = test_generated_code(problem, ground_truth, f, generated_code_path=code_file_path)
+
+        return {
+            'problem': problem,
+            'result': result,
+            'success': True
+        }
+
+    except Exception as e:
+        print(f"Error processing {problem}: {str(e)}")
+        return {
+            'problem': problem,
+            'result': None,
+            'success': False,
+            'error': str(e)
+        }
 
 
 def main():
@@ -55,61 +128,54 @@ def main():
     print(f'Save log to {path}')
     Path(path).mkdir(parents=True, exist_ok=True)
 
+    # Prepare arguments for each problem
+    problem_args = []
+    for problem in matched_problems:
+        problem_args.append({
+            'problem': problem,
+            'dataset': args.dataset,
+            'algorithm': args.algorithm,
+            'path': path,
+            'model': args.model,
+            'max_collaborate_nums': args.max_collaborate_nums,
+            'enable_reflection': args.enable_reflection,
+            'max_trials': args.max_trials,
+        })
+
+    # Use multiprocessing pool (adjust num_processes based on your system)
+    num_processes = min(50, len(matched_problems))  # Use up to 4 processes
     correct_num = 0
     ce_num = 0
     re_num = 0
-    pbar = tqdm(total=len(matched_problems))
     current_num = 0
-    for problem in matched_problems:
-        print(problem)
-        problem_data = read_problem(args.dataset, problem)
-        with get_openai_callback() as cb:
-            if args.algorithm == 'chain_of_experts' or args.algorithm == 'coe':
-                answer = chain_of_experts(
-                    problem_data, 
-                    args.max_collaborate_nums, 
-                    model_name=args.model, 
-                    enable_reflection=args.enable_reflection,
-                    max_trials=args.max_trials)
-                time.sleep(10)
-            else:
-                algorithm = algorithms[args.algorithm]
-                answer = algorithm.solve(problem_data, model_name=args.model)
-            print('-' * 10 + 'Token usage' + '-' * 20)
-            print(cb)
-            print('-' * 25)
-        
-        with open(os.path.join(path, f'{problem}_original_answer.txt'), 'w', encoding='utf8') as f:
-            f.write(answer)
-        
-        code = extract_code_from_string(answer)
-        
-        with open(os.path.join(path, f'{problem}_generated_code.py'), 'w', encoding='utf8') as f:
-            f.write(code)
 
-        with open('generated_code.py', 'w') as f:
-            f.write(code)
+    print(f"Running with {num_processes} processes...")
+    with Pool(num_processes) as pool:
+        with tqdm(total=len(matched_problems)) as pbar:
+            for result_dict in pool.imap_unordered(process_problem, problem_args):
+                if result_dict['success']:
+                    result = result_dict['result']
+                    if result == Result.ACCEPT:
+                        correct_num += 1
+                    elif result == Result.COMPILE_ERROR:
+                        ce_num += 1
+                    elif result == Result.RUNTIME_ERROR:
+                        re_num += 1
+                else:
+                    re_num += 1  # Count failed problems as runtime errors
 
-        # test_samples = read_test_samples(args.dataset, problem)
-        ground_truth = get_ground_truth(args.dataset, problem)
-        with open(os.path.join(path, f'{problem}_test_log.txt'), 'w', encoding='utf8') as f:
-            result = test_generated_code(problem, ground_truth, f)
-
-        if result == Result.ACCEPT:
-            correct_num += 1
-        elif result == Result.COMPILE_ERROR:
-            ce_num += 1
-        elif result == Result.RUNTIME_ERROR:
-            re_num += 1
-        
-        pbar.update()
-        current_num += 1
-        pbar.set_description(f'Accuracy: {correct_num / current_num * 100:.2f}% | Compile error: {ce_num / current_num * 100:.2f}% | Runtime error: {re_num / current_num * 100:.2f}%')
+                current_num += 1
+                pbar.update()
+                pbar.set_description(
+                    f'Accuracy: {correct_num / current_num * 100:.2f}% | '
+                    f'Compile error: {ce_num / current_num * 100:.2f}% | '
+                    f'Runtime error: {re_num / current_num * 100:.2f}%'
+                )
 
     print(f'Passed: {correct_num}/{total_num}')
     print(f'Accuracy: {correct_num / total_num * 100:.2f}%')
     print(f'Compile error: {ce_num / total_num * 100:.2f}%')
-    print(f'Runtime error{re_num / total_num * 100:.2f}%')
+    print(f'Runtime error: {re_num / total_num * 100:.2f}%')
 
 if __name__ == '__main__':
     main()
