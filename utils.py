@@ -25,7 +25,7 @@ def read_problem(dataset, problem_name):
     with open(os.path.join(base_dir, dataset, problem_name, 'description.txt'), 'r', encoding='utf8') as f:
         description = f.read()
 
-    with open(os.path.join(base_dir, dataset, problem_name, 'code_example.py'), 'r', encoding='utf8') as f:
+    with open(os.path.join(base_dir, 'code_example.py'), 'r', encoding='utf8') as f:
         code_example = f.read()
 
     return {

@@ -17,13 +17,16 @@ from experts import (
 )
 from comment_pool import CommentPool
 from utils import extract_code_from_string
+from pathlib import Path
+import time
 
 
 def chain_of_experts(problem, 
                      max_collaborate_nums, 
                      model_name, 
                      enable_reflection,
-                     max_trials):
+                     max_trials,
+                     log_dir='log'):
     """Run Chain of Experts pipeline
     
     Args:
@@ -49,6 +52,15 @@ def chain_of_experts(problem,
     evaluator = Evaluator(model_name)
     expert_stack = []
 
+    # Create log directory if reflection is enabled
+    code_file_path = None
+    if enable_reflection:
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        log_dir_name = f'run_reflection_{str(round(time.time()))}'
+        code_root_dir = os.path.join(log_dir, log_dir_name)
+        Path(code_root_dir).mkdir(parents=True, exist_ok=True)
+        code_file_path = os.path.join(code_root_dir, 'generated_code.py')
+
     for _ in range(max_trials):
         for _ in range(max_collaborate_nums):
             next_expert = conductor.forward(problem, comment_pool, max_collaborate_nums)
@@ -60,14 +72,15 @@ def chain_of_experts(problem,
         answer = reducer.forward(problem, comment_pool)
 
         code = extract_code_from_string(answer)
-        with open('generated_code.py', 'w') as f:
+        with open(code_file_path, 'w') as f:
             f.write(code)
 
         if enable_reflection:
-            test_sample = evaluator.forward(problem)
+            # test_sample = evaluator.forward(problem)
+            test_sample = {"input": {}}
             print(f'Generate test sample:\n{test_sample}')
             test_samples = [test_sample]
-            feedback = evaluator.evaluate(test_samples)
+            feedback = evaluator.evaluate(test_samples, generated_code_path=code_file_path)
             feedback_pool = CommentPool(all_experts, visible_matrix=np.ones((num_experts, num_experts)))
             feedback_pool.add_comment(Comment(evaluator, feedback))
             if feedback is not None:
@@ -90,5 +103,6 @@ def chain_of_experts(problem,
 
 if __name__ == '__main__':
     from utils import read_problem
-    problem = read_problem('LPWP', 'prob_250')
-    chain_of_experts(problem, model_name='gpt-3.5-turbo-1106', enable_reflection=False)
+    problem = read_problem('BWOR', '1')
+    # chain_of_experts(problem, model_name='gpt-3.5-turbo-1106', enable_reflection=False)
+    chain_of_experts(problem, model_name='o4-mini', enable_reflection=True, max_collaborate_nums=3, max_trials=3)

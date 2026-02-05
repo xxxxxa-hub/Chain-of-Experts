@@ -4,6 +4,7 @@ import traceback
 import inspect
 
 from experts.base_expert import BaseExpert
+import sys
 
 
 class Evaluator(BaseExpert):
@@ -66,11 +67,19 @@ Output:
         answer = json.loads(answer)
         return answer
     
-    def evaluate(self, samples):
+    def evaluate(self, samples, generated_code_path=None):
         feedback = ''
         try:
-            import generated_code
-            importlib.reload(generated_code)
+            if generated_code_path:
+                # Import from a specific file path (for multiprocessing safety)
+                spec = importlib.util.spec_from_file_location("generated_code", generated_code_path)
+                generated_code = importlib.util.module_from_spec(spec)
+                sys.modules["generated_code"] = generated_code
+                spec.loader.exec_module(generated_code)
+            else:
+                # Fallback to the old method for backwards compatibility
+                import generated_code
+                importlib.reload(generated_code)
         except BaseException as e:
             feedback += 'There is grammar error in generated code!\n'
             feedback += traceback.format_exc() + '\n'

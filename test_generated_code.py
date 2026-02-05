@@ -2,25 +2,34 @@ import os
 import json
 import importlib
 from result import Result
+import sys
 
 
 class NullWriter:
     def write(self, s):
         pass
 
-def test_generated_code(problem, samples, log_file=None):
+def test_generated_code(problem, ground_truth, log_file=None, generated_code_path=None):
     log_file = log_file or NullWriter()
 
     try:
-        import generated_code
-        importlib.reload(generated_code)
+        if generated_code_path:
+            # Import from a specific file path (for multiprocessing safety)
+            spec = importlib.util.spec_from_file_location("generated_code", generated_code_path)
+            generated_code = importlib.util.module_from_spec(spec)
+            sys.modules["generated_code"] = generated_code
+            spec.loader.exec_module(generated_code)
+        else:
+            # Fallback to the old method for backwards compatibility
+            import generated_code
+            importlib.reload(generated_code)
     except BaseException as e:
         log_file.write('There is grammar error in generated code!\n')
         log_file.write(str(e) + '\n')
         return Result.COMPILE_ERROR
 
     try:
-        func = getattr(generated_code, problem)
+        func = getattr(generated_code, "prob_solution")
     except AttributeError as e:
         log_file.write('Cannot load function!\n')
         log_file.write(str(e) + '\n')
@@ -32,45 +41,40 @@ def test_generated_code(problem, samples, log_file=None):
         if hasattr(data_process, 'post_process'):
             post_process = data_process.post_process
 
-    total_num = len(samples)
     passed_num = 0
     is_re = False
-    for i, sample in enumerate(samples):
-        try:
-            output = func(**sample['input'])
-        except BaseException as e:
-            is_re = True
-            log_file.write('=' * 15 + f'test sample {i}' + '=' * 15 + '\n')
-            log_file.write('Runtime Error\n')
-            log_file.write(str(e) + '\n\n')
-            continue
-        if post_process is not None:
-            output = post_process(*output)
-        
-        if len(sample['output']) == 1:
-            ground_truth = sample['output'][0]
-        else:
-            ground_truth = tuple(sample['output'])
+    output = None
+    try:
+        # output = func(**sample['input'])
+        output = func()
+    except BaseException as e:
+        is_re = True
+        log_file.write('=' * 15 + f'test sample' + '=' * 15 + '\n')
+        log_file.write('Runtime Error\n')
+        log_file.write(str(e) + '\n\n')
+    if post_process is not None and output is not None:
+        output = post_process(*output)
 
-        print('=' * 20)
-        print(output)
-        print(ground_truth)
-        print()
-        log_file.write('=' * 15 + f'test sample {i}' + '=' * 15 + '\n')
-        log_file.write('Program Output:\n')
-        log_file.write(str(output) + '\n\n')
-        log_file.write('Ground Truth:\n')
-        log_file.write(str(ground_truth) + '\n')
-        is_passed = (output == ground_truth)
+    print('=' * 20)
+    print(output)
+    print(ground_truth)
+    print()
+    log_file.write('=' * 15 + f'test sample' + '=' * 15 + '\n')
+    log_file.write('Program Output:\n')
+    log_file.write(str(output) + '\n\n')
+    log_file.write('Ground Truth:\n')
+    log_file.write(str(ground_truth) + '\n')
+    if not is_re and output is not None:
+        is_passed = abs(output - ground_truth) < 0.1
         if is_passed:
             passed_num += 1
         log_file.write(f'Is passed: {is_passed}\n')
-        log_file.write('\n')
+    log_file.write('\n')
         # assert output == tuple(sample['output']), f'Test failed:\nprogram output: {output}\nground truth: {tuple(sample["output"])}'
     # print('Test passed!!!')
     log_file.write('\n\n')
-    log_file.write(f'{passed_num}/{total_num} passed\n')
-    is_correct = (passed_num == total_num)
+    log_file.write(f'{passed_num}/{1} passed\n')
+    is_correct = (passed_num == 1)
     log_file.write(f'is correct: {is_correct}\n')
 
     if is_re:
@@ -86,6 +90,12 @@ def read_test_samples(dataset, problem):
         test_samples = json.load(f)
     return test_samples
 
+def get_ground_truth(dataset, problem):
+    # with open(os.path.join('dataset', dataset, problem, 'sample.json'), 'r', encoding='utf8') as f:
+    #     test_samples = json.load(f)
+    with open(os.path.join('dataset', dataset, problem, 'solution.json'), 'r', encoding='utf8') as f:
+        test_samples = json.load(f)
+    return test_samples['objective']
 
 if __name__ == '__main__':
     dataset = 'LPWP'
