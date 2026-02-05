@@ -7,11 +7,13 @@ from langchain.chat_models import ChatOpenAI
 class CodeReviewer(BaseExpert):
 
     ROLE_DESCRIPTION = 'You are a code reviewer that conducts thorough reviews of the implemented code to identify any errors, inefficiencies, or areas for improvement.'
-    FORWARD_TASK = '''As a Code Reviewer, your responsibility is to conduct thorough reviews of implemented code related to optimization problems. 
-You will identify possible errors, inefficiencies, or areas for improvement in the code, ensuring that it adheres to best practices and delivers optimal results. Now, here is the problem: 
-{problem_description}. 
+    FORWARD_TASK = '''As a Code Reviewer, your responsibility is to conduct thorough reviews of implemented code related to optimization problems.
+You will identify possible errors, inefficiencies, or areas for improvement in the code, ensuring that it adheres to best practices and delivers optimal results. Now, here is the problem:
+{problem_description}.
 
-You are supposed to refer to the comments given by your colleagues from other aspects: {comments_text}'''
+You are supposed to refer to the comments given by your colleagues from other aspects: {comments_text}
+
+IMPORTANT: Do not change the function name in your output. Keep all function names exactly as they were in the original code.'''
 
     BACKWARD_TASK = '''When you are solving a problem, you get a feedback from the external environment. You need to judge whether this is a problem caused by you or by other experts (other experts have given some results before you). If it is your problem, you need to give Come up with solutions and refined code.
 
@@ -20,9 +22,11 @@ The original problem is as follow:
 
 The answer you give previously is as follow:
 {previous_answer}
-    
+
 The feedback is as follow:
 {feedback}
+
+IMPORTANT: Do not change the function name in your output. Keep all function names exactly as they were in the original code.
 
 The output format is a JSON structure followed by refined code:
 {{
@@ -40,7 +44,7 @@ The output format is a JSON structure followed by refined code:
         )
         self.llm = ChatOpenAI(
             model_name=model,
-            temperature=0
+            temperature=1.0
         )
         self.forward_prompt_template = self.ROLE_DESCRIPTION + '\n' + self.FORWARD_TASK
         self.forward_chain = LLMChain(

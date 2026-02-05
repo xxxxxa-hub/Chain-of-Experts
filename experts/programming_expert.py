@@ -16,6 +16,8 @@ Here is a starter code:
 And the comments from other experts are as follow:
 {comments_text}
 
+IMPORTANT: Do not change the function name in your output. Keep all function names exactly as they were in the original code.
+
 Give your Python code directly. You should follow the format of given code example strictly. No code is required outside the function except for the import package (No test code). In your code, the model must be a solvable LP or MIP model.'''
     BACKWARD_TASK = '''When you are solving a problem, you get a feedback from the external environment. You need to judge whether this is a problem caused by you or by other experts (other experts have given some results before you). If it is your problem, you need to give Come up with solutions and refined code.
 
@@ -24,9 +26,11 @@ The original problem is as follow:
 
 The code you give previously is as follow:
 {previous_code}
-    
+
 The feedback is as follow:
 {feedback}
+
+IMPORTANT: Do not change the function name in your output. Keep all function names exactly as they were in the original code.
 
 The output format is a JSON structure followed by refined code:
 {{

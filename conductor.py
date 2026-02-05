@@ -33,7 +33,12 @@ You should output the name of expert directly. The next expert is:'''
             description='An special expert that collaborates all other experts.',
             model=model
         )
-        self.llm.max_tokens = 10
+        self.llm = ChatOpenAI(
+            model_name=model,
+            temperature=1.0,
+            model_kwargs={"max_completion_tokens": 10}
+        )
+        # self.llm.max_tokens = 10
 
     def forward(self, problem, comment_pool, max_collaborate_nums):
         all_experts = comment_pool.all_experts

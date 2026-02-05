@@ -11,7 +11,7 @@ class BaseExpert(object):
 
         self.llm = ChatOpenAI(
             model_name=model,
-            temperature=0
+            temperature=1.0
         )
         self.forward_prompt_template = self.ROLE_DESCRIPTION + '\n' + self.FORWARD_TASK
         self.forward_chain = LLMChain(
