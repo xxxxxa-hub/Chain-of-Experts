@@ -17,7 +17,8 @@
   shared 275 RPM limit.
 - [x] Corrected throttled Slurm array is submitted (job `50847696`).
 - [x] GPT direct-OpenAI backend smoke test passes (job `50848715`).
-- [ ] Replacement 30-task `%10` GPT/Gemini array is submitted.
+- [x] Replacement 30-task `%10` GPT/Gemini array is submitted (job
+  `50849200`); superseded jobs `50848942` and `50848943` were cancelled.
 - [ ] All 30 logical runs have complete result cardinality.
 - [ ] Aggregate per-benchmark mean/variation and failure composition are
   reported.
