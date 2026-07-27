@@ -1,51 +1,75 @@
-# Local CoE baseline rerun
+# Gemini 3 Flash Preview: three benchmarks × five runs
 
-## Core contract
+## Experiment contract
 
-- Goal: reproduce one historical `/Chain-of-Experts` result without changing
-  the CoE algorithm or overwriting any prior artifacts.
-- Route: reproduce.
-- Baseline id: `local-coe-gemini3-industryor`.
-- Source snapshot: `5176f35` on `origin/main`.
-- Task: Chain-of-Experts on all 100 IndustryOR problems.
-- Model/settings: `google/gemini-3-flash-preview` through the repository's
-  OpenRouter configuration, temperature 1, high reasoning, reflection enabled,
-  3 collaborations, 3 trials, and the existing 10-token Conductor limit.
-- Metric: `ACCEPT / 100`, with wrong-answer, compile-error, and runtime-error
-  counts reported separately.
-- Historical comparison target: 75 accepted artifacts out of 100 expected
-  problems (the old run retained 95 test logs), reported as 75% accuracy.
-- Entrypoint: `run_exp_metrics_litellm.py`.
-- Output: a unique directory below
-  `log/reruns/IndustryOR/google_gemini-3-flash-preview/coe/`, containing
-  `metadata.json`,
-  `results.jsonl`, generated programs, test logs, and a summary JSON.
-- Acceptance: the run finishes with 100 recorded problems and the observed
-  accuracy/failure mix can be compared directly with the historical result.
-- Fallback: resume the exact run directory; never reuse or overwrite an older
-  result directory.
+- Route: reproduce the local Chain-of-Experts baseline without changing its
+  prompts, expert-selection behavior, reflection algorithm, or evaluator.
+- Model: `google/gemini-3-flash-preview` through the repository's OpenRouter
+  configuration.
+- Benchmarks: ComplexLP (211 problems), IndustryOR (100), and BWOR (82).
+- Repetitions: five independent API runs per benchmark.
+- Settings: temperature 1, high reasoning, reflection enabled, three
+  collaborations, three trials, and the existing 10-token Conductor limit.
+- Parallelism: 50 Python workers per run; one Slurm array task per logical run.
+- Metric: exact repository evaluator result, summarized as ACCEPT,
+  WRONG_ANSWER, COMPILE_ERROR, and RUNTIME_ERROR.
+- Existing evidence: the completed IndustryOR run with 75 ACCEPT,
+  21 WRONG_ANSWER, and 4 RUNTIME_ERROR is reused as IndustryOR run 1.
+- No post-hoc repair or LLM objective extraction is part of the metric.
 
-## Execution path
+## Artifact contract
 
-- Working directory: `/hpc/group/fanglab/xx102/Chain-of-Experts`.
-- Environment: existing `old_coe` conda environment and repository `.env`.
-- Smoke test: problem `0`, one worker, otherwise identical settings.
-- Main run: `submit_reproduce_local_gemini3_industryor.sbatch`.
+New runs are stored under:
+
+`log/reruns_matrix/google_gemini-3-flash-preview/coe_reflection3_conductor10/<benchmark>/run_XX`
+
+Each problem stores readable artifacts under:
+
+```text
+problems/<problem>/
+  reflection/trial_XX/
+    selected_experts.jsonl
+    reducer_answer.txt
+    generated_code.py
+    evaluation_feedback.txt
+    backward/step_XX_<expert>/
+      raw_response.txt
+      parsed_response.json
+  final/
+    original_answer.txt
+    generated_code.py
+    test_log.txt
+```
+
+If an unrecorded, partially written problem is resumed, its new artifacts go
+under `problems/<problem>/attempts/<timestamp>/` instead of overwriting the
+partial attempt. Legacy root-level answer/code/test-log files are retained as
+compatibility copies.
+
+## Execution and acceptance
+
+- Entrypoint: `submit_gemini3_3bench_5x.sbatch`.
+- Scheduler shape: array tasks 0–14; task ID 5 reuses the completed IndustryOR
+  run 1 and exits without API calls.
+- Resubmission behavior: complete runs are skipped; incomplete runs resume
+  only problems absent from `results.jsonl`.
+- Acceptance: each logical run has exactly the benchmark's expected number of
+  unique problem records and a valid four-way result for every problem.
 - Durable scheduler logs: `slurm_logs/`.
-- Fastest failure signals: missing API environment variables, import failure,
-  or no new JSONL records after the initial API wave.
 
 ## Risks
 
-- The historical implementation uses threaded workers and second-resolution
-  reflection paths; this behavior is intentionally preserved for comparison.
-- API-side stochasticity and provider changes can move accuracy even when the
-  local code is identical.
-- The runner path/metadata changes are external to the CoE algorithm.
+- API-side stochasticity and provider changes can vary results across runs.
+- Fifteen simultaneous array tasks can create up to 700 new concurrent API
+  workers because one of the 15 tasks is reused.
+- The artifact/import isolation changes are external bookkeeping and
+  concurrency-safety changes; they do not intentionally alter CoE behavior.
 
 ## Revision log
 
 | Time | Change | Reason | Impact |
 |---|---|---|---|
-| 2026-07-27 | Created isolated rerun path | Prevent overwrite | No algorithm change |
-| 2026-07-27 | Switched first full run from GPT-5.2 to Gemini 3 Flash Preview | User requested Gemini first | GPT job was still pending and was cancelled without output |
+| 2026-07-27 | Created isolated rerun branch and paths | Preserve old results | No algorithm change |
+| 2026-07-27 | Completed first Gemini IndustryOR run | Establish reproducibility point | 75/100 ACCEPT |
+| 2026-07-27 | Added per-problem/per-trial artifacts | Make failures auditable | Logging only |
+| 2026-07-27 | Added 3×5 Slurm matrix | Run independent repetitions concurrently | 14 new runs |

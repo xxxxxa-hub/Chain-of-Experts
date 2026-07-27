@@ -1,13 +1,16 @@
-# Local CoE baseline rerun checklist
+# Gemini 3 Flash Preview matrix checklist
 
-- [x] Baseline source snapshot and route are explicit.
-- [x] Dataset and metric contract are explicit.
-- [x] Plan records command, outputs, acceptance, and fallback.
-- [x] Unique-path runner passes local checks.
-- [x] One-problem smoke test completes.
-- [x] Pending GPT-5.2 job `50846780` was cancelled before it started.
-- [x] Full Gemini-3-Flash-preview IndustryOR run is launched with durable logs
-  (Slurm job `50846806`).
-- [ ] All 100 problem results are recorded.
-- [ ] Accuracy and failure composition are compared with the historical result.
-- [ ] Verification verdict is recorded.
+- [x] Benchmarks, sizes, model, settings, and metrics are explicit.
+- [x] Completed IndustryOR run 1 is validated at 100 records and assigned to
+  the matrix without rerunning it.
+- [x] Artifact layout preserves raw parse-failure responses and final outputs.
+- [x] Legacy artifact filenames remain available.
+- [x] Threaded dynamic imports use problem-specific module names.
+- [x] Resume skips every problem already recorded in JSONL, including errors.
+- [x] Slurm array maps 15 tasks to three benchmarks × five runs.
+- [x] Syntax and bounded mocked artifact/import checks pass.
+- [ ] Changes are committed and pushed.
+- [ ] Slurm array is submitted.
+- [ ] All 15 logical runs have complete result cardinality.
+- [ ] Aggregate per-benchmark mean/variation and failure composition are
+  reported.

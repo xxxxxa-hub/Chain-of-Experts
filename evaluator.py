@@ -2,9 +2,18 @@ import json
 import importlib
 import traceback
 import inspect
+import hashlib
+import threading
+from pathlib import Path
 
 from experts.base_expert import BaseExpert
 import sys
+
+
+def _unique_module_name(generated_code_path):
+    resolved = str(Path(generated_code_path).resolve())
+    digest = hashlib.sha1(resolved.encode('utf-8')).hexdigest()[:12]
+    return f'_generated_code_{threading.get_ident()}_{digest}'
 
 
 class Evaluator(BaseExpert):
@@ -72,9 +81,10 @@ Output:
         try:
             if generated_code_path:
                 # Import from a specific file path (for multiprocessing safety)
-                spec = importlib.util.spec_from_file_location("generated_code", generated_code_path)
+                module_name = _unique_module_name(generated_code_path)
+                spec = importlib.util.spec_from_file_location(module_name, generated_code_path)
                 generated_code = importlib.util.module_from_spec(spec)
-                sys.modules["generated_code"] = generated_code
+                sys.modules[module_name] = generated_code
                 spec.loader.exec_module(generated_code)
             else:
                 # Fallback to the old method for backwards compatibility
