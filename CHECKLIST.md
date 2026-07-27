@@ -8,9 +8,14 @@
 - [x] Threaded dynamic imports use problem-specific module names.
 - [x] Resume skips every problem already recorded in JSONL, including errors.
 - [x] Slurm array maps 15 tasks to three benchmarks × five runs.
+- [x] Provider 429 failures are excluded from benchmark results and retried.
+- [x] Array concurrency is capped at one run while retaining 50 workers within
+  each run.
 - [x] Syntax and bounded mocked artifact/import checks pass.
 - [x] Changes are committed and pushed (`f8afa29`).
-- [x] Slurm array is submitted (job `50847605`).
+- [x] Initial array `50847605` was cancelled after OpenRouter exposed its
+  shared 275 RPM limit.
+- [ ] Corrected throttled Slurm array is submitted.
 - [ ] All 15 logical runs have complete result cardinality.
 - [ ] Aggregate per-benchmark mean/variation and failure composition are
   reported.

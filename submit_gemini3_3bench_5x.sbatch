@@ -2,7 +2,7 @@
 #SBATCH --job-name=coe-gemini3-3bench-5x
 #SBATCH --account=fanglab
 #SBATCH --partition=fanglab
-#SBATCH --array=0-14
+#SBATCH --array=0-14%1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -65,9 +65,28 @@ except (OSError, KeyError, json.JSONDecodeError):
     raise SystemExit(1)
 
 valid_results = {"ACCEPT", "WRONG_ANSWER", "COMPILE_ERROR", "RUNTIME_ERROR"}
+retryable_markers = (
+    "ratelimiterror",
+    "rate limit",
+    "error code: 429",
+    "timeout",
+    "timed out",
+    "apiconnectionerror",
+    "connection error",
+    "error code: 502",
+    "error code: 503",
+    "error code: 504",
+)
+def is_retryable(record):
+    if record.get("retryable") is True:
+        return True
+    error = str(record.get("error") or "").lower()
+    return any(marker in error for marker in retryable_markers)
+
 complete = (
     len(records) == expected
     and all(record.get("result") in valid_results for record in records.values())
+    and not any(is_retryable(record) for record in records.values())
 )
 raise SystemExit(0 if complete else 1)
 PY
@@ -105,19 +124,28 @@ runner_args=(
   --run_index "$run_index"
 )
 
-if [[ -d "$run_dir" ]]; then
-  echo "Resuming incomplete run: $run_dir"
-  runner_args+=(--resume_dir "$run_dir")
-else
-  echo "Starting new run: $run_dir"
-  runner_args+=(--run_dir "$run_dir")
-fi
+for pass_index in 1 2 3; do
+  location_args=()
+  if [[ -d "$run_dir" ]]; then
+    echo "Pass $pass_index: resuming incomplete run: $run_dir"
+    location_args+=(--resume_dir "$run_dir")
+  else
+    echo "Pass $pass_index: starting new run: $run_dir"
+    location_args+=(--run_dir "$run_dir")
+  fi
 
-python run_exp_metrics_litellm.py "${runner_args[@]}"
+  python run_exp_metrics_litellm.py "${runner_args[@]}" "${location_args[@]}"
 
-if ! run_is_complete "$run_dir/results.jsonl" "$problem_count"; then
-  echo "Run exited without all $problem_count problem records: $run_dir" >&2
-  exit 1
-fi
+  if run_is_complete "$run_dir/results.jsonl" "$problem_count"; then
+    echo "Completed: $benchmark independent run $run_index"
+    exit 0
+  fi
 
-echo "Completed: $benchmark independent run $run_index"
+  if [[ "$pass_index" -lt 3 ]]; then
+    echo "Transient or missing records remain; retrying after 90 seconds."
+    sleep 90
+  fi
+done
+
+echo "Run remains incomplete after three passes: $run_dir" >&2
+exit 1

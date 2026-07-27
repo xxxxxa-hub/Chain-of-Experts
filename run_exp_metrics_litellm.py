@@ -50,6 +50,32 @@ def load_latest_results(output_path):
     return latest
 
 
+def is_retryable_error(error):
+    """Classify provider/network failures that should not become benchmark results."""
+    if not error:
+        return False
+    message = str(error).lower()
+    retryable_markers = (
+        'ratelimiterror',
+        'rate limit',
+        'error code: 429',
+        'timeout',
+        'timed out',
+        'apiconnectionerror',
+        'connection error',
+        'error code: 502',
+        'error code: 503',
+        'error code: 504',
+    )
+    return any(marker in message for marker in retryable_markers)
+
+
+def is_retryable_record(record):
+    if record.get('retryable') is True:
+        return True
+    return is_retryable_error(record.get('error'))
+
+
 def process_problem(args_dict):
     """Worker function to process a single problem.
 
@@ -170,6 +196,7 @@ def process_problem(args_dict):
 
     except Exception as e:
         elapsed_time = time.time() - start_time
+        retryable = is_retryable_error(f'{type(e).__name__}: {e}')
         print(f"Error processing {problem}: {str(e)}")
         traceback.print_exc()
         trace = traceback.format_exc()
@@ -186,6 +213,7 @@ def process_problem(args_dict):
                 'error_type': type(e).__name__,
                 'error': str(e),
                 'elapsed_time': elapsed_time,
+                'retryable': retryable,
             }, handle, indent=2)
         return {
             'problem': problem,
@@ -193,6 +221,8 @@ def process_problem(args_dict):
             'ground_truth': None,
             'success': False,
             'error': str(e),
+            'retryable': retryable,
+            'failure_stage': 'pipeline_exception',
             'elapsed_time': elapsed_time,
             'api_call_count': 0,
             'total_tokens': 0,
@@ -288,7 +318,10 @@ def main():
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     existing_results = load_latest_results(output_path) if args.resume_dir else {}
-    already_recorded = set(existing_results).intersection(selected_problems)
+    already_recorded = {
+        problem for problem, record in existing_results.items()
+        if problem in selected_problems and not is_retryable_record(record)
+    }
     matched_problems = [
         problem for problem in selected_problems
         if problem not in already_recorded
@@ -356,7 +389,7 @@ def main():
     total_tokens_all = 0
     total_cost_all = 0.0
     for record in existing_results.values():
-        if str(record.get('problem')) not in selected_problems:
+        if str(record.get('problem')) not in already_recorded:
             continue
         result_name = record.get('result')
         if result_name in result_counts:
@@ -417,6 +450,9 @@ def main():
                         'completion_tokens': result_dict.get('completion_tokens', 0),
                         'total_cost': result_dict.get('total_cost', 0),
                         'error': result_dict.get('error'),
+                        'success': result_dict.get('success'),
+                        'retryable': result_dict.get('retryable', False),
+                        'failure_stage': result_dict.get('failure_stage'),
                         'artifact_dir': result_dict.get('artifact_dir'),
                         'generated_code_path': result_dict.get('generated_code_path'),
                         'test_log_path': result_dict.get('test_log_path'),
@@ -453,12 +489,15 @@ def main():
     # Also write a summary JSON file
     final_records = load_latest_results(output_path)
     recorded_problems = sorted(
-        set(final_records).intersection(selected_problems),
+        {
+            problem for problem, record in final_records.items()
+            if problem in selected_problems and not is_retryable_record(record)
+        },
         key=sort_key,
     )
     missing_problems = [
         problem for problem in selected_problems
-        if problem not in final_records
+        if problem not in recorded_problems
     ]
     summary_path = output_path.replace('.jsonl', '_summary.json')
     summary = {

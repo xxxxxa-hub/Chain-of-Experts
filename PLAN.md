@@ -11,6 +11,8 @@
 - Settings: temperature 1, high reasoning, reflection enabled, three
   collaborations, three trials, and the existing 10-token Conductor limit.
 - Parallelism: 50 Python workers per run; one Slurm array task per logical run.
+  Array concurrency is capped at one because OpenRouter currently enforces a
+  shared 275 RPM limit for this model.
 - Metric: exact repository evaluator result, summarized as ACCEPT,
   WRONG_ANSWER, COMPILE_ERROR, and RUNTIME_ERROR.
 - Existing evidence: the completed IndustryOR run with 75 ACCEPT,
@@ -52,7 +54,8 @@ compatibility copies.
 - Scheduler shape: array tasks 0–14; task ID 5 reuses the completed IndustryOR
   run 1 and exits without API calls.
 - Resubmission behavior: complete runs are skipped; incomplete runs resume
-  only problems absent from `results.jsonl`.
+  problems absent from `results.jsonl` plus transient 429/timeout/connection
+  failures. Each task makes up to three passes with a 90-second cooldown.
 - Acceptance: each logical run has exactly the benchmark's expected number of
   unique problem records and a valid four-way result for every problem.
 - Durable scheduler logs: `slurm_logs/`.
@@ -60,8 +63,8 @@ compatibility copies.
 ## Risks
 
 - API-side stochasticity and provider changes can vary results across runs.
-- Fifteen simultaneous array tasks can create up to 700 new concurrent API
-  workers because one of the 15 tasks is reused.
+- Provider-side RPM limits can change independently of the local API account;
+  the observed OpenRouter response capped this model at 275 RPM.
 - The artifact/import isolation changes are external bookkeeping and
   concurrency-safety changes; they do not intentionally alter CoE behavior.
 
