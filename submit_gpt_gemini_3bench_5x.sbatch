@@ -45,6 +45,14 @@ load_env_file() {
       echo "Invalid dotenv key in $env_file: $key" >&2
       exit 2
     fi
+    # Match python-dotenv's handling of simple quoted values.
+    if (( ${#value} >= 2 )); then
+      if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+        value=${value:1:${#value}-2}
+      elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+        value=${value:1:${#value}-2}
+      fi
+    fi
     printf -v "$key" '%s' "$value"
     export "$key"
   done < "$env_file"
@@ -75,6 +83,10 @@ case "$model_family" in
     load_env_file "$openrouter_env_file"
     if [[ -z "${OPENROUTER_API_KEY:-}" || -z "${OPENROUTER_API_BASE:-}" ]]; then
       echo "OPENROUTER_API_KEY/OPENROUTER_API_BASE missing from $openrouter_env_file" >&2
+      exit 2
+    fi
+    if [[ ! "$OPENROUTER_API_BASE" =~ ^https?:// ]]; then
+      echo "OPENROUTER_API_BASE must begin with http:// or https://" >&2
       exit 2
     fi
     ;;
