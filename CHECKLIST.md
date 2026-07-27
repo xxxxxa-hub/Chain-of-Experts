@@ -9,8 +9,8 @@
 - [x] Resume skips every problem already recorded in JSONL, including errors.
 - [x] Slurm array maps 15 tasks to three benchmarks × five runs.
 - [x] Syntax and bounded mocked artifact/import checks pass.
-- [ ] Changes are committed and pushed.
-- [ ] Slurm array is submitted.
+- [x] Changes are committed and pushed (`f8afa29`).
+- [x] Slurm array is submitted (job `50847605`).
 - [ ] All 15 logical runs have complete result cardinality.
 - [ ] Aggregate per-benchmark mean/variation and failure composition are
   reported.
