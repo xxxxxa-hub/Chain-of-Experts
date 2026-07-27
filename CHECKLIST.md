@@ -7,19 +7,17 @@
 - [x] Legacy artifact filenames remain available.
 - [x] Threaded dynamic imports use problem-specific module names.
 - [x] Resume skips every problem already recorded in JSONL, including errors.
-- [x] Slurm array maps 15 tasks to three benchmarks × five runs.
-- [x] Parameterized sbatch maps two provider-isolated arrays to 30 logical
-  runs.
+- [x] Interleaved sbatch maps one `0-29%10` array to 30 logical runs, with
+  even GPT and odd Gemini tasks.
 - [x] Provider 429 failures are excluded from benchmark results and retried.
-- [x] Array concurrency is capped at one run while retaining 50 workers within
-  each run.
+- [x] Array concurrency is capped at ten runs; each run retains 50 workers.
 - [x] Syntax and bounded mocked artifact/import checks pass.
 - [x] Changes are committed and pushed (`f8afa29`).
 - [x] Initial array `50847605` was cancelled after OpenRouter exposed its
   shared 275 RPM limit.
 - [x] Corrected throttled Slurm array is submitted (job `50847696`).
-- [ ] GPT direct-OpenAI backend smoke test passes.
-- [ ] Replacement GPT and Gemini arrays are submitted.
-- [ ] All 15 logical runs have complete result cardinality.
+- [x] GPT direct-OpenAI backend smoke test passes (job `50848715`).
+- [ ] Replacement 30-task `%10` GPT/Gemini array is submitted.
+- [ ] All 30 logical runs have complete result cardinality.
 - [ ] Aggregate per-benchmark mean/variation and failure composition are
   reported.

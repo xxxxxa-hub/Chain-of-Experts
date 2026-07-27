@@ -11,9 +11,9 @@
   runs total).
 - Settings: temperature 1, high reasoning, reflection enabled, three
   collaborations, three trials, and the existing 10-token Conductor limit.
-- Parallelism: 50 Python workers per run. GPT and Gemini use separate Slurm
-  arrays, each capped at one active task, so the two providers can run
-  concurrently without launching two runs against the same provider.
+- Parallelism: 50 Python workers per run. One interleaved Slurm array uses
+  `0-29%10`; even tasks are GPT and odd tasks are Gemini, so the initial ten
+  concurrent slots contain five runs from each provider.
 - Metric: exact repository evaluator result, summarized as ACCEPT,
   WRONG_ANSWER, COMPILE_ERROR, and RUNTIME_ERROR.
 - Existing evidence: the completed IndustryOR run with 75 ACCEPT,
@@ -51,10 +51,10 @@ compatibility copies.
 
 ## Execution and acceptance
 
-- Entrypoint: `submit_gpt_gemini_3bench_5x.sbatch`, submitted once with
-  `MODEL_FAMILY=gpt` and once with `MODEL_FAMILY=gemini`.
-- Scheduler shape: two arrays of tasks 0–14 with `%1`; Gemini task ID 5 reuses
-  the completed IndustryOR run 1 and exits without API calls.
+- Entrypoint: `submit_gpt_gemini_30x10.sbatch`, which interleaves the two
+  provider mappings implemented by `submit_gpt_gemini_3bench_5x.sbatch`.
+- Scheduler shape: one array of tasks 0–29 with `%10`; Gemini's logical task
+  ID 5 reuses the completed IndustryOR run 1 and exits without API calls.
 - Resubmission behavior: complete runs are skipped; incomplete runs resume
   problems absent from `results.jsonl` plus transient 429/timeout/connection
   failures. Each task makes up to three passes with a 90-second cooldown.
