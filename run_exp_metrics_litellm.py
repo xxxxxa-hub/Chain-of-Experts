@@ -93,19 +93,23 @@ def process_problem(args_dict):
 
     start_time = time.time()
     problem_root = Path(path) / 'problems' / problem
-    if problem_root.exists() and any(problem_root.iterdir()):
-        problem_artifact_dir = (
-            problem_root
-            / 'attempts'
-            / datetime.now(timezone.utc).strftime(
-                'attempt_%Y%m%dT%H%M%S_%fZ'
-            )
-        )
-    else:
-        problem_artifact_dir = problem_root
-    problem_artifact_dir.mkdir(parents=True, exist_ok=False)
+    problem_artifact_dir = problem_root
 
     try:
+        # A cancelled worker may leave an empty problem directory. Reuse that
+        # empty directory; only allocate an attempt directory when artifacts
+        # from an earlier attempt actually exist.
+        problem_root.mkdir(parents=True, exist_ok=True)
+        if any(problem_root.iterdir()):
+            problem_artifact_dir = (
+                problem_root
+                / 'attempts'
+                / datetime.now(timezone.utc).strftime(
+                    'attempt_%Y%m%dT%H%M%S_%fZ'
+                )
+            )
+            problem_artifact_dir.mkdir(parents=True, exist_ok=False)
+
         print(f"Processing: {problem}")
         problem_data = read_problem(dataset, problem)
 
@@ -200,21 +204,28 @@ def process_problem(args_dict):
         print(f"Error processing {problem}: {str(e)}")
         traceback.print_exc()
         trace = traceback.format_exc()
-        (problem_artifact_dir / 'traceback.txt').write_text(
-            trace,
-            encoding='utf-8',
-        )
-        with (problem_artifact_dir / 'failure.json').open(
-            'w',
-            encoding='utf-8',
-        ) as handle:
-            json.dump({
-                'problem': problem,
-                'error_type': type(e).__name__,
-                'error': str(e),
-                'elapsed_time': elapsed_time,
-                'retryable': retryable,
-            }, handle, indent=2)
+        try:
+            problem_artifact_dir.mkdir(parents=True, exist_ok=True)
+            (problem_artifact_dir / 'traceback.txt').write_text(
+                trace,
+                encoding='utf-8',
+            )
+            with (problem_artifact_dir / 'failure.json').open(
+                'w',
+                encoding='utf-8',
+            ) as handle:
+                json.dump({
+                    'problem': problem,
+                    'error_type': type(e).__name__,
+                    'error': str(e),
+                    'elapsed_time': elapsed_time,
+                    'retryable': retryable,
+                }, handle, indent=2)
+        except OSError as artifact_error:
+            print(
+                f'Could not write failure artifact for {problem}: '
+                f'{artifact_error}'
+            )
         return {
             'problem': problem,
             'result': 'RUNTIME_ERROR',
@@ -416,7 +427,32 @@ def main():
             futures = {executor.submit(process_problem, pa): pa for pa in problem_args}
             with tqdm(total=len(matched_problems)) as pbar:
                 for future in as_completed(futures):
-                    result_dict = future.result()
+                    try:
+                        result_dict = future.result()
+                    except Exception as exc:
+                        # Keep one unexpected worker failure from terminating
+                        # every other in-flight problem in the run.
+                        failed_args = futures[future]
+                        print(
+                            f"Worker crashed for {failed_args['problem']}: "
+                            f'{exc}'
+                        )
+                        traceback.print_exc()
+                        result_dict = {
+                            'problem': failed_args['problem'],
+                            'result': 'RUNTIME_ERROR',
+                            'ground_truth': None,
+                            'success': False,
+                            'error': f'{type(exc).__name__}: {exc}',
+                            'retryable': True,
+                            'failure_stage': 'worker_crash',
+                            'elapsed_time': 0,
+                            'api_call_count': 0,
+                            'total_tokens': 0,
+                            'prompt_tokens': 0,
+                            'completion_tokens': 0,
+                            'total_cost': 0.0,
+                        }
                     result_name = result_dict['result']
 
                     if result_name == 'ACCEPT':
