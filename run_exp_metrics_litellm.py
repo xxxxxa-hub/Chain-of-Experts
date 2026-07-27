@@ -3,7 +3,9 @@ import json
 import time
 import os
 import re
+import subprocess
 import traceback
+from datetime import datetime, timezone
 from tqdm import tqdm
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -148,10 +150,13 @@ def main():
     parser.add_argument('--max_trials', type=int, default=3, help='Maximum number of forward-backward trials')
     parser.add_argument('--max_problems', type=int, default=10, help='Maximum number of problems to run (default: 10)')
     parser.add_argument('--num_processes', type=int, default=None, help='Number of parallel processes (default: min(50, num_problems))')
+    parser.add_argument('--run_dir', type=str, default=None, help='New, non-existing directory for this run')
     parser.add_argument('--resume_dir', type=str, default=None, help='Resume from an existing log directory')
     parser.add_argument('--output', type=str, default=None, help='Output JSONL file path for per-problem results')
     args = parser.parse_args()
     args.algorithm = args.algorithm.lower()
+    if args.run_dir and args.resume_dir:
+        parser.error('--run_dir and --resume_dir are mutually exclusive')
 
     # Collect and sort matched problems
     matched_problems = []
@@ -180,7 +185,7 @@ def main():
 
     # Determine log directory
     if args.resume_dir:
-        path = args.resume_dir
+        path = os.path.abspath(args.resume_dir)
         if not os.path.isdir(path):
             print(f'Resume directory does not exist: {path}')
             exit(1)
@@ -199,19 +204,58 @@ def main():
             print('All problems already completed. Nothing to do.')
             exit(0)
     else:
-        Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-        log_dir_name = f'{args.dataset}_{args.model.replace("/", "_")}_re_run'
-        path = os.path.join(args.log_dir, log_dir_name)
-        Path(path).mkdir(parents=True, exist_ok=True)
+        if args.run_dir:
+            path = os.path.abspath(args.run_dir)
+        else:
+            safe_model = re.sub(r'[^A-Za-z0-9_.-]+', '_', args.model)
+            run_name = 'run_{}_{}_{}'.format(
+                datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ'),
+                os.getpid(),
+                time.time_ns() % 1_000_000_000,
+            )
+            path = os.path.abspath(os.path.join(
+                args.log_dir,
+                'reruns',
+                args.dataset,
+                safe_model,
+                args.algorithm,
+                run_name,
+            ))
+        Path(path).mkdir(parents=True, exist_ok=False)
 
     print(f'Save log to {path}')
 
     # Set up output JSONL path
     if args.output is None:
-        output_path = os.path.join(path, f'results_{args.algorithm}_{args.dataset}_{args.model.replace("/", "_")}_re_run.jsonl')
+        output_path = os.path.join(path, 'results.jsonl')
     else:
-        output_path = args.output
+        output_path = os.path.abspath(args.output)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        source_commit = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        source_commit = None
+    metadata = {
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'source_commit': source_commit,
+        'run_dir': path,
+        'output': output_path,
+        'dataset': args.dataset,
+        'model': args.model,
+        'algorithm': args.algorithm,
+        'problem': args.problem,
+        'max_problems': args.max_problems,
+        'num_processes': args.num_processes,
+        'enable_reflection': args.enable_reflection,
+        'max_collaborate_nums': args.max_collaborate_nums,
+        'max_trials': args.max_trials,
+    }
+    with open(os.path.join(path, 'metadata.json'), 'w', encoding='utf-8') as handle:
+        json.dump(metadata, handle, indent=2)
 
     # Prepare arguments for each problem
     problem_args = []
@@ -238,8 +282,9 @@ def main():
     total_tokens_all = 0
     total_cost_all = 0.0
 
-    # Truncate the JSONL file so previous runs are overwritten
-    with open(output_path, 'w', encoding='utf-8') as out_f:
+    # A fresh run must never overwrite an existing result file.
+    output_mode = 'a' if args.resume_dir else 'x'
+    with open(output_path, output_mode, encoding='utf-8'):
         pass
 
     print(f"Running with {num_processes} threads...")

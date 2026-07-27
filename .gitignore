@@ -11,6 +11,7 @@ dataset/
 log/
 log-*/
 logs/
+slurm_logs/
 
 experiment_results_*.txt
 run_metrics*.log
