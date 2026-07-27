@@ -15,7 +15,7 @@
 - [x] Changes are committed and pushed (`f8afa29`).
 - [x] Initial array `50847605` was cancelled after OpenRouter exposed its
   shared 275 RPM limit.
-- [ ] Corrected throttled Slurm array is submitted.
+- [x] Corrected throttled Slurm array is submitted (job `50847696`).
 - [ ] All 15 logical runs have complete result cardinality.
 - [ ] Aggregate per-benchmark mean/variation and failure composition are
   reported.

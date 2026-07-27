@@ -76,3 +76,4 @@ compatibility copies.
 | 2026-07-27 | Completed first Gemini IndustryOR run | Establish reproducibility point | 75/100 ACCEPT |
 | 2026-07-27 | Added per-problem/per-trial artifacts | Make failures auditable | Logging only |
 | 2026-07-27 | Added 3×5 Slurm matrix | Run independent repetitions concurrently | 14 new runs |
+| 2026-07-27 | Capped array concurrency after observed 429s | OpenRouter exposed a shared 275 RPM limit | Keep 50 workers within one run; retry transient failures |
