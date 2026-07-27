@@ -261,6 +261,8 @@ def main():
     parser.add_argument('--resume_dir', type=str, default=None, help='Resume from an existing log directory')
     parser.add_argument('--output', type=str, default=None, help='Output JSONL file path for per-problem results')
     parser.add_argument('--run_index', type=int, default=None, help='Independent-run label stored in metadata/results')
+    parser.add_argument('--provider', choices=('openai', 'openrouter'), default=None,
+                        help='Provider label stored in metadata/results')
     args = parser.parse_args()
     args.algorithm = args.algorithm.lower()
     if args.run_dir and args.resume_dir:
@@ -355,6 +357,7 @@ def main():
         'output': output_path,
         'dataset': args.dataset,
         'model': args.model,
+        'provider': args.provider,
         'algorithm': args.algorithm,
         'problem': args.problem,
         'max_problems': args.max_problems,
@@ -473,6 +476,7 @@ def main():
                     jsonl_record = {
                         'dataset': args.dataset,
                         'model': args.model,
+                        'provider': args.provider,
                         'algorithm': args.algorithm,
                         'run_index': args.run_index,
                         'problem': result_dict['problem'],
@@ -539,6 +543,7 @@ def main():
     summary = {
         'dataset': args.dataset,
         'model': args.model,
+        'provider': args.provider,
         'algorithm': args.algorithm,
         'run_index': args.run_index,
         'total_problems': total_num,

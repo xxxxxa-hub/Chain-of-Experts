@@ -1,6 +1,6 @@
-# Gemini 3 Flash Preview matrix checklist
+# GPT-5.2 and Gemini 3 Flash Preview matrix checklist
 
-- [x] Benchmarks, sizes, model, settings, and metrics are explicit.
+- [x] Benchmarks, sizes, models/providers, settings, and metrics are explicit.
 - [x] Completed IndustryOR run 1 is validated at 100 records and assigned to
   the matrix without rerunning it.
 - [x] Artifact layout preserves raw parse-failure responses and final outputs.
@@ -8,6 +8,8 @@
 - [x] Threaded dynamic imports use problem-specific module names.
 - [x] Resume skips every problem already recorded in JSONL, including errors.
 - [x] Slurm array maps 15 tasks to three benchmarks × five runs.
+- [x] Parameterized sbatch maps two provider-isolated arrays to 30 logical
+  runs.
 - [x] Provider 429 failures are excluded from benchmark results and retried.
 - [x] Array concurrency is capped at one run while retaining 50 workers within
   each run.
@@ -16,6 +18,8 @@
 - [x] Initial array `50847605` was cancelled after OpenRouter exposed its
   shared 275 RPM limit.
 - [x] Corrected throttled Slurm array is submitted (job `50847696`).
+- [ ] GPT direct-OpenAI backend smoke test passes.
+- [ ] Replacement GPT and Gemini arrays are submitted.
 - [ ] All 15 logical runs have complete result cardinality.
 - [ ] Aggregate per-benchmark mean/variation and failure composition are
   reported.

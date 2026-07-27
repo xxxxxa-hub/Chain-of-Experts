@@ -1,18 +1,19 @@
-# Gemini 3 Flash Preview: three benchmarks × five runs
+# GPT-5.2 and Gemini 3 Flash Preview: three benchmarks × five runs
 
 ## Experiment contract
 
 - Route: reproduce the local Chain-of-Experts baseline without changing its
   prompts, expert-selection behavior, reflection algorithm, or evaluator.
-- Model: `google/gemini-3-flash-preview` through the repository's OpenRouter
-  configuration.
+- Models/providers: `gpt-5.2` through the OpenAI API and
+  `google/gemini-3-flash-preview` through OpenRouter.
 - Benchmarks: ComplexLP (211 problems), IndustryOR (100), and BWOR (82).
-- Repetitions: five independent API runs per benchmark.
+- Repetitions: five independent API runs per model and benchmark (30 logical
+  runs total).
 - Settings: temperature 1, high reasoning, reflection enabled, three
   collaborations, three trials, and the existing 10-token Conductor limit.
-- Parallelism: 50 Python workers per run; one Slurm array task per logical run.
-  Array concurrency is capped at one because OpenRouter currently enforces a
-  shared 275 RPM limit for this model.
+- Parallelism: 50 Python workers per run. GPT and Gemini use separate Slurm
+  arrays, each capped at one active task, so the two providers can run
+  concurrently without launching two runs against the same provider.
 - Metric: exact repository evaluator result, summarized as ACCEPT,
   WRONG_ANSWER, COMPILE_ERROR, and RUNTIME_ERROR.
 - Existing evidence: the completed IndustryOR run with 75 ACCEPT,
@@ -23,7 +24,7 @@
 
 New runs are stored under:
 
-`log/reruns_matrix/google_gemini-3-flash-preview/coe_reflection3_conductor10/<benchmark>/run_XX`
+`log/reruns_matrix/<safe_model>/coe_reflection3_conductor10/<benchmark>/run_XX`
 
 Each problem stores readable artifacts under:
 
@@ -50,9 +51,10 @@ compatibility copies.
 
 ## Execution and acceptance
 
-- Entrypoint: `submit_gemini3_3bench_5x.sbatch`.
-- Scheduler shape: array tasks 0–14; task ID 5 reuses the completed IndustryOR
-  run 1 and exits without API calls.
+- Entrypoint: `submit_gpt_gemini_3bench_5x.sbatch`, submitted once with
+  `MODEL_FAMILY=gpt` and once with `MODEL_FAMILY=gemini`.
+- Scheduler shape: two arrays of tasks 0–14 with `%1`; Gemini task ID 5 reuses
+  the completed IndustryOR run 1 and exits without API calls.
 - Resubmission behavior: complete runs are skipped; incomplete runs resume
   problems absent from `results.jsonl` plus transient 429/timeout/connection
   failures. Each task makes up to three passes with a 90-second cooldown.
