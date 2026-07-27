@@ -1,7 +1,11 @@
+import os
+from dotenv import load_dotenv
 from langchain import PromptTemplate, OpenAI, LLMChain
 from langchain.chat_models import ChatOpenAI
 
 from utils import extract_code_from_string
+
+load_dotenv()
 
 
 def solve(problem_data, model_name='gpt-3.5-turbo'):
@@ -22,7 +26,9 @@ Here is a starter code:
             prompt_template = prompt_template + '\nThe code looks like as following:\n' + "\n".join(history_answer)
         llm = ChatOpenAI(
             model_name=model_name,
-            temperature=0
+            temperature=0,
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url=os.getenv("OPENROUTER_API_BASE"),
         )
         llm_chain = LLMChain(
             llm=llm,

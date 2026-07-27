@@ -1,9 +1,13 @@
+import os
 import random
 
+from dotenv import load_dotenv
 from langchain import PromptTemplate, OpenAI, LLMChain
 from langchain.chat_models import ChatOpenAI
 
 from experts.base_expert import BaseExpert
+
+load_dotenv()
 
 
 class Conductor(BaseExpert):
@@ -33,10 +37,19 @@ You should output the name of expert directly. The next expert is:'''
             description='An special expert that collaborates all other experts.',
             model=model
         )
+        kwargs = {}
+        if any(x in model for x in ["gemini"]):
+            kwargs.update({"extra_body":{"reasoning": {"effort": "high"}}})
+        elif any(x in model for x in ["o3", "o4", "gpt-5"]):
+            kwargs.update({"reasoning_effort": "high"})
+
         self.llm = ChatOpenAI(
             model_name=model,
             temperature=1.0,
-            model_kwargs={"max_completion_tokens": 10}
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url=os.getenv("OPENROUTER_API_BASE"),
+            model_kwargs={"max_completion_tokens": 10},
+            **kwargs
         )
         # self.llm.max_tokens = 10
 

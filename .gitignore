@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+dataset/
+log/
+log-*/
+logs/
+
+experiment_results_*.txt
+run_metrics*.log
+generated_code.py
+
+# Local interactive API probes; these are not reproducible tests.
+tests/test.py
+tests/test_client.py

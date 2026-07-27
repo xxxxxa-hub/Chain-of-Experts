@@ -74,6 +74,6 @@ def print_problematic_logs(directory):
 
 if __name__ == "__main__":
     task = "ComplexLP"
-    model = "o4-mini"
+    model = "google/gemini-3-flash-preview"
     directory = f"/hpc/group/fanglab/xx102/Chain-of-Experts/log/{task}_{model}"
     print_problematic_logs(directory)

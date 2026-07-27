@@ -2,6 +2,7 @@ import argparse
 import time
 import os
 import re
+import traceback
 from tqdm import tqdm
 from pathlib import Path
 from multiprocessing import Pool
@@ -95,6 +96,7 @@ def process_problem(args_dict):
 
     except Exception as e:
         print(f"Error processing {problem}: {str(e)}")
+        traceback.print_exc()
         return {
             'problem': problem,
             'result': None,
@@ -113,6 +115,7 @@ def main():
     parser.add_argument('--model', type=str, default='gpt-3.5-turbo', help='Base large language model')
     parser.add_argument('--max_collaborate_nums', type=int, default=3, help='Number of max collaborations')
     parser.add_argument('--max_trials', type=int, default=3, help='Maximum number of forward-backward trials')
+    parser.add_argument('--resume_dir', type=str, default=None, help='Resume from an existing log directory, skipping already completed problems')
     args = parser.parse_args()
     args.algorithm = args.algorithm.lower()
 
@@ -125,11 +128,34 @@ def main():
         print('No problem matched! Please check arguements.')
         exit(0)
 
-    Path(args.log_dir).mkdir(parents=True, exist_ok=True)
-    log_dir_name = f'run_{args.algorithm}_{args.dataset}_{str(round(time.time()))}'
-    path = os.path.join(args.log_dir, log_dir_name)
+    # Determine log directory: resume existing or create new
+    if args.resume_dir:
+        path = args.resume_dir
+        if not os.path.isdir(path):
+            print(f'Resume directory does not exist: {path}')
+            exit(1)
+        # Filter out already completed problems (those with a test_log file)
+        skipped = []
+        remaining = []
+        for p in matched_problems:
+            if os.path.exists(os.path.join(path, f'{p}_test_log.txt')):
+                skipped.append(p)
+            else:
+                remaining.append(p)
+        print(f'Resuming from {path}')
+        print(f'  Already completed: {len(skipped)} problems')
+        print(f'  Remaining: {len(remaining)} problems')
+        matched_problems = remaining
+        if not matched_problems:
+            print('All problems already completed. Nothing to do.')
+            exit(0)
+    else:
+        Path(args.log_dir).mkdir(parents=True, exist_ok=True)
+        log_dir_name = f'run_{args.algorithm}_{args.dataset}_{str(round(time.time()))}'
+        path = os.path.join(args.log_dir, log_dir_name)
+        Path(path).mkdir(parents=True, exist_ok=True)
+
     print(f'Save log to {path}')
-    Path(path).mkdir(parents=True, exist_ok=True)
 
     # Prepare arguments for each problem
     problem_args = []

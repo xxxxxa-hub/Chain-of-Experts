@@ -1,7 +1,11 @@
+import os
+from dotenv import load_dotenv
 from langchain import PromptTemplate, OpenAI, LLMChain
 from langchain.chat_models import ChatOpenAI
 
 from utils import extract_code_from_string
+
+load_dotenv()
 
 
 def solve(problem, model_name='gpt-3.5-turbo'):
@@ -10,7 +14,9 @@ You are given a specific problem. You aim to develop an efficient Python program
 Now the origin problem is as follow:\n{problem}\nGive your Python code directly."""
     llm = ChatOpenAI(
         model_name=model_name,
-        temperature=0
+        temperature=0,
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url=os.getenv("OPENROUTER_API_BASE"),
     )
     llm_chain = LLMChain(
         llm=llm,

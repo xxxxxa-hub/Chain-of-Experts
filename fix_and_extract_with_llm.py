@@ -8,10 +8,11 @@ import json
 import sys
 import glob
 import os
+import subprocess
+import tempfile
 from pathlib import Path
-import importlib.util
 from openai import OpenAI
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -60,26 +61,73 @@ Return only the corrected Python code, no explanations."""
 
 def execute_code(code_content, code_idx):
     """
-    Execute the fixed code and extract the objective value.
+    Execute the fixed code in an isolated subprocess and extract the objective value.
     Returns (objective_value, error_message)
     """
+    # Create a wrapper script that runs the code and prints the result
+    wrapper_code = f'''
+import sys
+import json
+
+{code_content}
+
+if __name__ == "__main__":
     try:
-        # Create a temporary module
-        spec = importlib.util.spec_from_loader(f"fixed_code_{code_idx}", loader=None)
-        module = importlib.util.module_from_spec(spec)
-
-        # Execute the code
-        exec(code_content, module.__dict__)
-
-        # Call the function
-        result = module.prob_solution()
-
-        # Expect a single value, not a tuple
+        result = prob_solution()
         if isinstance(result, tuple):
-            return None, f"Expected single value, got tuple: {result}"
+            print(json.dumps({{"error": f"Expected single value, got tuple: {{result}}"}}))
+        else:
+            print(json.dumps({{"objective": result}}))
+    except Exception as e:
+        print(json.dumps({{"error": f"{{type(e).__name__}}: {{str(e)}}"}}))
+'''
 
-        objective = result
-        return objective, None
+    try:
+        # Run in isolated subprocess with timeout
+        result = subprocess.run(
+            [sys.executable, "-c", wrapper_code],
+            capture_output=True,
+            text=True,
+            timeout=60  # 60 second timeout
+        )
+
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            return None, f"Subprocess error: {stderr[:500]}"
+
+        # Parse the JSON output
+        output = result.stdout.strip()
+        stderr = result.stderr.strip()
+
+        if not output:
+            if stderr:
+                return None, f"No stdout, stderr: {stderr[:500]}"
+            return None, "No output from subprocess"
+
+        # Try to find JSON in the output (might have other prints before it)
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            # Try to find JSON object in the last line
+            lines = output.strip().split('\n')
+            for line in reversed(lines):
+                line = line.strip()
+                if line.startswith('{') and line.endswith('}'):
+                    try:
+                        data = json.loads(line)
+                        break
+                    except json.JSONDecodeError:
+                        continue
+            else:
+                # No valid JSON found
+                return None, f"No JSON in output. stdout: {output[:300]}, stderr: {stderr[:200]}"
+
+        if "error" in data:
+            return None, data["error"]
+        return data.get("objective"), None
+
+    except subprocess.TimeoutExpired:
+        return None, "Execution timeout (60s)"
     except Exception as e:
         return None, f"{type(e).__name__}: {str(e)}"
 
@@ -167,7 +215,7 @@ def load_ground_truth(dataset_path):
 
 def main():
     task = "ComplexLP"
-    model = "o4-mini"
+    model = "qwen/qwen3-30b-a3b-thinking-2507"
     log_dir = f"/hpc/group/fanglab/xx102/Chain-of-Experts/log/{task}_{model}"
     base_dir = Path(f"{log_dir}/codes")
     cleaned_codes_dir = Path(f"{log_dir}/cleaned_codes")
@@ -191,11 +239,11 @@ def main():
     successful = {}
     still_failed = {}
 
-    # Use ProcessPoolExecutor for parallel processing
+    # Use ThreadPoolExecutor - each thread spawns isolated subprocess for code execution
     num_workers = 16  # Adjust this based on your system capacity
-    print(f"Processing with {num_workers} processes...\n")
+    print(f"Processing with {num_workers} threads (each with isolated subprocess)...\n")
 
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
         # Submit all tasks
         futures = {
             executor.submit(process_single_code, code_idx, base_dir, cleaned_codes_dir): code_idx
@@ -206,15 +254,21 @@ def main():
         completed = 0
         for future in as_completed(futures):
             completed += 1
-            code_idx, objective, error = future.result()
+            code_idx = futures[future]
 
-            if error is None:
-                successful[code_idx] = objective
-                fixed_count += 1
-                print(f"  [{completed}/{len(problematic_indices)}] ✓ Code {code_idx}: Objective = {objective}")
-            else:
-                still_failed[code_idx] = error
-                print(f"  [{completed}/{len(problematic_indices)}] ✗ Code {code_idx}: {error}")
+            try:
+                code_idx, objective, error = future.result()
+
+                if error is None:
+                    successful[code_idx] = objective
+                    fixed_count += 1
+                    print(f"  [{completed}/{len(problematic_indices)}] ✓ Code {code_idx}: Objective = {objective}")
+                else:
+                    still_failed[code_idx] = error
+                    print(f"  [{completed}/{len(problematic_indices)}] ✗ Code {code_idx}: {error}")
+            except Exception as e:
+                still_failed[code_idx] = f"Process crashed: {type(e).__name__}: {str(e)}"
+                print(f"  [{completed}/{len(problematic_indices)}] ✗ Code {code_idx}: Process crashed - {type(e).__name__}: {str(e)}")
 
     # Save results
     results_data = {

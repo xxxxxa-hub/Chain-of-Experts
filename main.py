@@ -72,8 +72,9 @@ def chain_of_experts(problem,
         answer = reducer.forward(problem, comment_pool)
 
         code = extract_code_from_string(answer)
-        with open(code_file_path, 'w') as f:
-            f.write(code)
+        if code_file_path is not None:
+            with open(code_file_path, 'w') as f:
+                f.write(code)
 
         if enable_reflection:
             # test_sample = evaluator.forward(problem)
@@ -88,6 +89,7 @@ def chain_of_experts(problem,
                     previous_expert = expert_stack.pop()
                     previous_comment = comment_pool.pop_comment()
                     result = previous_expert.backward(feedback_pool)
+                    result = result.strip("```json").strip("```")
                     result = json.loads(result)
                     if result['is_caused_by_you']:
                         previous_comment.comment_text = result['refined_result']
